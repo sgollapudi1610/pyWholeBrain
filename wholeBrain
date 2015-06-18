@@ -1,0 +1,115 @@
+"""
+First version of wholeBrain in Python 3.4, provides modified grayscale images outputted
+individually. Major problem with this version is memory overload/leakage after processing
+a certain number of frames.
+
+First goal is to check what PIL functions are doing to storedmemory and whether or not
+the memory can be manually flushed after each frame.
+
+Once this problem is solved, then switching to color and then to real-time (via OpenCV)
+should suffer little to no setbacks beyond syntax.
+"""
+
+
+from PIL import Image
+import numpy
+import sys
+import os
+
+class wholeBrain :
+    '''
+
+    '''
+    def __init__ (self, arg_fname, startFr, endFr):
+        '''constructor: saves attribute fname '''
+        self.fname = arg_fname
+        self.startFrame= startFr
+        self.endFrame = endFr
+        self.im = Image.open(self.fname)                          # open input image file
+        self.imageW, self.imageH = self.im.size
+        self.debug = 0
+        if (self.debug == 1): print(self.im.format, self.im.size, self.im.mode)
+        if (self.debug == 1): print("mean: ", self.imarray.mean())
+        self.outI = Image.new("F", (self.imageW, self.imageH))    # open output image file
+        return
+
+
+    def timeDomainMeanPix (self):
+        '''
+        computes mean fluorescence matrix
+        '''
+        self.im.seek(self.startFrame)
+        imarray = numpy.array(self.im)
+        imShape = imarray.shape
+        movieArray = numpy.zeros(imShape, dtype = float)         # initialize numpy matrix to zero
+        movieArray = movieArray + numpy.array(self.im)
+        cnt = 1
+        try: 
+            while 1:                                             # add pixel values across the frames for average
+                self.im.seek(self.im.tell() + 1)
+                movieArray = movieArray + numpy.array(self.im)
+                cnt += 1
+                if (self.endFrame != -1 and cnt > self.endFrame):
+                    break
+        except EOFError:
+            print(cnt, "frames processed for mean")              #frame count check, likely needs to change
+
+        meanPix = movieArray / cnt                               # compute mean matrix
+        self.im.seek(self.startFrame)
+        return meanPix
+
+
+
+    def transform (self):
+        '''
+        dF/F matrix computation
+        '''
+        movieMeanPix = self.timeDomainMeanPix()               # compute mean fluorescence matrix
+        imarray = numpy.array(self.im)
+        imShape = imarray.shape
+        onesMat = numpy.ones(imShape, dtype = float)     # initialize 1's matrix (used for normalization)
+        count = self.startFrame
+        try:
+            while 1:
+                imarray = numpy.array(self.im)           # compute dF/F matrix
+                normedArray = imarray / movieMeanPix
+                normedArray = normedArray - onesMat
+
+                flatNormedArray = normedArray.flatten()       # update the output image data
+                NormedArrayList = flatNormedArray.tolist()
+                filename = "FrameF%d.tif"%count
+                self.outI.putdata(NormedArrayList)
+                self.outI.save(filename)                     #outputs new image (one at a time)
+                self.im.seek(self.im.tell() + 1)
+                count += 1
+
+                if (self.endFrame != -1 and count > self.endFrame):
+                    break
+
+        except EOFError:
+            print(count + 1 - self.startFrame, "frames transformed")       #frame count check, likely needs to change
+        self.im.seek(self.startFrame)
+        return
+
+
+def main ():
+    '''
+    '''
+    startFrame = 0
+    endFrame = -1
+    fname = "140331_01_fr1-300.tif"
+    if len(sys.argv) >= 4 :
+        endFrame = int(sys.argv[3])
+    if len(sys.argv) >= 3 :
+        startFrame = int(sys.argv[2])
+    if len(sys.argv) >= 2 :
+        fname = sys.argv[1]
+
+    bImages = wholeBrain(fname, startFrame, endFrame)     #command line order as follows: python wholeBrain [(output file location) start end]
+    bImages.transform()                                   #optional, but recommended current commands in brackets (eventually need to remove)
+    return
+
+
+main()
+
+
